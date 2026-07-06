@@ -1,0 +1,7 @@
+qrcode[pill]
+pillow
+pandas
+openpyxl
+matplotlib
+pyinstaller
+reportlab
