@@ -1,2 +1,5 @@
 venv
 db
+build
+service.spec
+.venv
