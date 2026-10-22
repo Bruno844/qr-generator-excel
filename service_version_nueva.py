@@ -5,10 +5,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import matplotlib.pyplot as plt
 import tempfile
-
+import win32con
+import win32print
+import win32ui
 import pandas as pd
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageWin
 import qrcode
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.pdfgen import canvas
@@ -52,8 +54,8 @@ def generate_qr():
     os.makedirs(carpeta_escritorio, exist_ok=True)
 
     # --- CONFIGURACIÓN PARA ETIQUETA 80x50mm (203 DPI) ---
-    ETIQUETA_ANCHO = 640
-    ETIQUETA_ALTO = 400
+    ETIQUETA_ANCHO = 400
+    ETIQUETA_ALTO = 640
 
     qrs_generados = 0
 
@@ -69,7 +71,7 @@ def generate_qr():
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=8,
+            box_size=12,
             border=2,
         )
 
@@ -84,7 +86,7 @@ def generate_qr():
 
         # 3. Pegamos el QR centrado horizontalmente
         x_qr = (ETIQUETA_ANCHO - qr_width) // 2
-        y_qr = 15
+        y_qr = 40 #estaba en 15
         imagen_final.paste(qr_img, (x_qr, y_qr))
 
         # 4. Configuramos la tipografía
@@ -93,7 +95,7 @@ def generate_qr():
 
         # probamos si existe la fuente arial, y le colocamos el tamaño, en este caso 10, si no capturamos el error con except
         try:
-            font = ImageFont.truetype("arial.ttf", 10)
+            font = ImageFont.truetype("arial.ttf", 8)
         except IOError:
             font = ImageFont.load_default()
 
@@ -107,7 +109,7 @@ def generate_qr():
 
 
         x_text = (ETIQUETA_ANCHO - text_width) // 2
-        y_text = y_qr + qr_height + 15 # Dejamos 15px de espacio debajo del QR
+        y_text = y_qr + qr_height + 15 # Dejamos 30px de espacio debajo del QR , estaba en 15
 
         # 6. Dibujamos el texto abajo de la imagen del qr
         draw.multiline_text((x_text, y_text), texto, fill="black", font=font, align="center")
@@ -215,39 +217,105 @@ def filter_data():
     display_data(filtered_df)
 
 
+# def printqr():
+#     ruta_archivo = filedialog.askopenfilenames(
+#         title="Selecciona el archivo para imprimir",
+#         filetypes=[
+#             ("Archivos PDF", "*.pdf"),
+#             ("Docs de texto", "*.txt"),
+#             ("Archivos de imagen", "*.*"),
+#         ],
+#     )
+
+#     if ruta_archivo:
+#         exitos = 0
+#         errores = 0
+#         for ruta in ruta_archivo:
+#             try:
+#                 ruta_normalizada = os.path.abspath(ruta)
+#                 os.startfile(ruta_normalizada, "print")
+#                 exitos += 1
+#             except Exception as e:
+#                 messagebox.showerror(
+#                     "Error", f"No se pudo imprimir el archivo.\nDetalles: {e}"
+#                 )
+#                 errores += 1
+
+#         if errores == 0:
+#             messagebox.showinfo("Éxito!", f"Se enviaron {exitos} archivos a imprimir")
+#         else:
+#             messagebox.showwarning(
+#                 "Resultado",
+#                 f"Se enviaron {exitos} a imprimir, pero {errores} fallaron",
+#             )
+#     else:
+#         messagebox.showwarning("Cancelado", "No se seleccionó ningún archivo")
+
+
+
 def printqr():
-    ruta_archivo = filedialog.askopenfilenames(
-        title="Selecciona el archivo para imprimir",
-        filetypes=[
-            ("Archivos PDF", "*.pdf"),
-            ("Docs de texto", "*.txt"),
-            ("Archivos de imagen", "*.*"),
-        ],
+    ruta_archivos = filedialog.askopenfilenames(
+        title="Selecciona los QRs para imprimir",
+        filetypes=[("Archivos de imagen", "*.png *.jpg *.jpeg")],
     )
 
-    if ruta_archivo:
-        exitos = 0
-        errores = 0
-        for ruta in ruta_archivo:
-            try:
-                ruta_normalizada = os.path.abspath(ruta)
-                os.startfile(ruta_normalizada, "print")
-                exitos += 1
-            except Exception as e:
-                messagebox.showerror(
-                    "Error", f"No se pudo imprimir el archivo.\nDetalles: {e}"
-                )
-                errores += 1
-
-        if errores == 0:
-            messagebox.showinfo("Éxito!", f"Se enviaron {exitos} archivos a imprimir")
-        else:
-            messagebox.showwarning(
-                "Resultado",
-                f"Se enviaron {exitos} a imprimir, pero {errores} fallaron",
-            )
-    else:
+    if not ruta_archivos:
         messagebox.showwarning("Cancelado", "No se seleccionó ningún archivo")
+        return
+
+    try:
+        # Obtener la impresora predeterminada de Windows
+        nombre_impresora = win32print.GetDefaultPrinter()
+
+        hDC = win32ui.CreateDC()
+        hDC.CreatePrinterDC(nombre_impresora)
+
+        # 1. Obtener el tamaño total imprimible de la hoja de la impresora (en píxeles)
+        ancho_hoja = hDC.GetDeviceCaps(win32con.HORZRES)
+        alto_hoja = hDC.GetDeviceCaps(win32con.VERTRES)
+
+        # 2. Iniciar UN solo trabajo de impresión para todo el lote
+        hDC.StartDoc("Prueba Impresión Lote QRs")
+
+        cant_impresas = 0
+
+        for ruta in ruta_archivos:
+            img = Image.open(ruta).convert("RGB")
+            ancho_img, alto_img = img.size
+
+            # Escalar el QR para que ocupe el 40% del ancho de la hoja (mantiene proporción)
+            ancho_deseado = int(ancho_hoja * 0.4)
+            alto_deseado = int(alto_img * (ancho_deseado / ancho_img))
+
+            # Centrar la imagen en la hoja A4/Carta
+            x1 = (ancho_hoja - ancho_deseado) // 2
+            y1 = (alto_hoja - alto_deseado) // 2
+            x2 = x1 + ancho_deseado
+            y2 = y1 + alto_deseado
+
+            # Iniciar nueva hoja (página)
+            hDC.StartPage()
+
+            dibujo = ImageWin.Dib(img)
+            dibujo.draw(hDC.GetHandleOutput(), (x1, y1, x2, y2))
+
+            hDC.EndPage()
+            cant_impresas += 1
+
+        # Finalizar el lote
+        hDC.EndDoc()
+        hDC.DeleteDC()
+
+        messagebox.showinfo(
+            "¡Éxito!",
+            f"Se enviaron {cant_impresas} páginas a la impresora {nombre_impresora}.",
+        )
+
+    except Exception as e:
+        messagebox.showerror(
+            "Error",
+            f"Ocurrió un error al enviar a la impresora.\nDetalles: {e}",
+        )
 
 
 # ----------------------------------------------------- CONFIGURACIÓN DE WIDGETS ---------------------------------------------------------------
